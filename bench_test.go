@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The wrapper's work on top of ffmpeg itself is building arguments,
@@ -174,4 +175,16 @@ func BenchmarkValidate(b *testing.B) {
 			}
 		}
 	})
+}
+
+func BenchmarkOptionSet(b *testing.B) {
+	base := NewOptionSet().VideoCodec("libx264").Preset("veryfast").PixelFormat("yuv420p").AudioCodec("aac").MovFlags("+faststart")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = (&FFmpeg{}).Command().
+			Input("in.mp4").
+			With(base.Clone().Size(1920, 1080).CRF(20).Seek(90 * time.Second)).
+			Output("out.mp4").
+			Args()
+	}
 }

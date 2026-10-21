@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/donghquinn/go-ffmpeg"
@@ -67,6 +68,32 @@ func ExampleCommand_Options() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Build options per case from a shared preset.
+func ExampleOptionSet() {
+	base := ffmpeg.NewOptionSet().
+		VideoCodec("libx264").Preset("veryfast").PixelFormat("yuv420p").
+		AudioCodec("aac").MovFlags("+faststart")
+
+	type rendition struct {
+		height  int
+		crf     float64
+		noAudio bool
+	}
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		With(ffmpeg.NewOptionSet().Seek(90 * time.Second)).
+		Input("in.mov")
+	for _, r := range []rendition{{1080, 20, false}, {480, 26, true}} {
+		opts := base.Clone().
+			VideoFilter(fmt.Sprintf("scale=-2:%d", r.height)).
+			CRF(r.crf).
+			When(r.noAudio, (*ffmpeg.OptionSet).NoAudio)
+		cmd.With(opts).Output(fmt.Sprintf("out_%dp.mp4", r.height))
+	}
+	fmt.Println(strings.Join(cmd.Args(), " "))
+	// Output:
+	// -n -ss 90 -i in.mov -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:1080 -crf 20 out_1080p.mp4 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:480 -crf 26 -an out_480p.mp4
 }
 
 func ExampleCommand_Validate() {

@@ -64,6 +64,18 @@ func (c *Command) Options(args ...string) *Command {
 	return c.add(partOptions, append([]string(nil), args...))
 }
 
+// With adds the options of each set at the current position, like
+// [Command.Options]. Nil sets are skipped, so optional sets can be passed
+// directly. The sets are copied; changing them later does not affect c.
+func (c *Command) With(sets ...*OptionSet) *Command {
+	for _, s := range sets {
+		if s != nil && s.Len() > 0 {
+			c.add(partOptions, s.Args())
+		}
+	}
+	return c
+}
+
 // Output adds an output file or URL. Options added since the previous input
 // or output are output options for this output.
 func (c *Command) Output(path string) *Command {
