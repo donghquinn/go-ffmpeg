@@ -145,30 +145,33 @@ var rules = []rule{
 	{ErrInvalidArgument, []string{"unrecognized option", "option not found", "error splitting the argument list", "invalid argument"}},
 }
 
-var (
-	// "[in#0 @ 0x841028000] " / "[AVFormatContext @ 0x70d02c500] "
-	componentPrefix = regexp.MustCompile(`^\[[^\]]+ @ 0x[0-9a-fA-F]+\]\s*`)
-	// "Error opening input file nope.mp4." / "Error opening output file out.mp4."
-	fileLine = regexp.MustCompile(`^Error (?:opening|parsing options for) (?:input|output) file (.+?)\.?$`)
-)
+// "Error opening input file nope.mp4." / "Error opening output file out.mp4."
+var fileLine = regexp.MustCompile(`^Error (?:opening|parsing options for) (?:input|output) file (.+?)\.?$`)
 
 // classify inspects ffmpeg's stderr and returns the matching sentinel error,
 // the most relevant line, and the file the error refers to (if any).
 func classify(stderr string) (kind error, message, file string) {
 	lines := splitLines(stderr)
+	// Lowercase once: rules × patterns × lines comparisons follow.
+	lower := make([]string, len(lines))
+	for i, l := range lines {
+		lower[i] = strings.ToLower(l)
+	}
 
 	for _, l := range lines {
-		if m := fileLine.FindStringSubmatch(l); m != nil {
-			file = m[1]
-			break
+		if strings.HasPrefix(l, "Error ") {
+			if m := fileLine.FindStringSubmatch(l); m != nil {
+				file = m[1]
+				break
+			}
 		}
 	}
 
 	for _, r := range rules {
 		for _, p := range r.patterns {
-			for _, l := range lines {
-				if strings.Contains(strings.ToLower(l), p) {
-					return r.kind, l, file
+			for i, l := range lower {
+				if strings.Contains(l, p) {
+					return r.kind, lines[i], file
 				}
 			}
 		}
@@ -178,9 +181,9 @@ func classify(stderr string) (kind error, message, file string) {
 	// cause; with chattier log levels the last line usually is.
 	if len(lines) > 0 {
 		message = lines[len(lines)-1]
-		for _, l := range lines {
-			if strings.Contains(strings.ToLower(l), "error") {
-				message = l
+		for i, l := range lower {
+			if strings.Contains(l, "error") {
+				message = lines[i]
 				break
 			}
 		}
@@ -191,13 +194,30 @@ func classify(stderr string) (kind error, message, file string) {
 // splitLines returns the non-empty lines of s with ffmpeg's component prefix
 // stripped. Progress updates separated by '\r' are treated as lines too.
 func splitLines(s string) []string {
-	s = strings.ReplaceAll(s, "\r", "\n")
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		l = strings.TrimSpace(componentPrefix.ReplaceAllString(strings.TrimSpace(l), ""))
-		if l != "" {
+	out := make([]string, 0, strings.Count(s, "\n")+1)
+	for len(s) > 0 {
+		var l string
+		if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+			l, s = s[:i], s[i+1:]
+		} else {
+			l, s = s, ""
+		}
+		if l = strings.TrimSpace(stripComponent(strings.TrimSpace(l))); l != "" {
 			out = append(out, l)
 		}
 	}
 	return out
+}
+
+// stripComponent removes ffmpeg's log prefix such as "[in#0 @ 0x841028000] "
+// or "[AVFormatContext @ 0x70d02c500] " from l.
+func stripComponent(l string) string {
+	if !strings.HasPrefix(l, "[") {
+		return l
+	}
+	end := strings.IndexByte(l, ']')
+	if end < 0 || !strings.Contains(l[:end], " @ 0x") {
+		return l
+	}
+	return l[end+1:]
 }

@@ -94,3 +94,17 @@ case errors.As(err, &fe):
   log level with `WithLogLevel`, and mirror stderr with `WithStderr(os.Stderr)`.
 - When the context is canceled, ffmpeg receives an interrupt so it can finalize
   the output, and is killed if it hasn't exited after `WithWaitDelay` (default 5s).
+
+## Performance
+
+The wrapper adds no measurable time to an ffmpeg run: process startup and
+encoding dominate. Stderr capture keeps a bounded 64 KiB tail, and error
+classification only runs when ffmpeg fails (~0.7 µs for a typical error).
+
+```
+BenchmarkRun/exec        ~16.0 ms/op   (plain os/exec)
+BenchmarkRun/wrapper     ~16.1 ms/op   (within noise)
+BenchmarkClassify/typical    ~740 ns/op   6 allocs/op
+```
+
+Run them with `go test -run '^$' -bench . -benchmem`.
