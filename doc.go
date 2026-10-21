@@ -19,6 +19,17 @@
 //		Overwrite().
 //		Run(ctx)
 //
+// # Validation
+//
+// [Command.Validate] checks a command's structure and option values without
+// running ffmpeg; [FFmpeg.Validate] additionally checks every option, codec
+// and format against the installed ffmpeg. Both report all problems at once
+// in a [*ValidationError]:
+//
+//	if err := ff.Validate(ctx, cmd); err != nil {
+//		return err // errors.Is(err, ffmpeg.ErrInvalidCommand)
+//	}
+//
 // # Error handling
 //
 // Every failure of an ffmpeg or ffprobe process is reported as an [*Error],

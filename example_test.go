@@ -69,6 +69,24 @@ func ExampleCommand_Options() {
 	}
 }
 
+func ExampleCommand_Validate() {
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		Input("in.mp4").
+		Options("-c:v libx264", ffmpeg.CRF, "high", ffmpeg.ReadRealtime).
+		Output("out.mp4")
+
+	var ve *ffmpeg.ValidationError
+	if errors.As(cmd.Validate(), &ve) {
+		for _, issue := range ve.Issues {
+			fmt.Println(issue)
+		}
+	}
+	// Output:
+	// "-c:v libx264" (for "out.mp4"): contains a space; pass the option and its value as separate arguments, e.g. Options("-c:v", "libx264")
+	// "-crf" (for "out.mp4"): invalid value "high": must be a number
+	// "-re" (for "out.mp4"): input-only option placed before an output; move it before the Input() it applies to
+}
+
 func ExampleFFmpeg_Probe() {
 	ff, err := ffmpeg.New()
 	if err != nil {

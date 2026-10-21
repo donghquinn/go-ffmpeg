@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,9 @@ type FFmpeg struct {
 	logLevel    string
 	stderr      io.Writer
 	waitDelay   time.Duration
+
+	capsMu sync.Mutex
+	caps   *capabilities // cached by Validate
 }
 
 // Option configures an [FFmpeg].
