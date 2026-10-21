@@ -14,7 +14,8 @@
 //
 //	err = ff.Command().
 //		Input("in.mov").
-//		Output("out.mp4", "-c:v", "libx264", "-crf", "23").
+//		Options("-c:v", "libx264", "-crf", "23").
+//		Output("out.mp4").
 //		Overwrite().
 //		Run(ctx)
 //

@@ -22,10 +22,46 @@ if err != nil {
 
 err = ff.Command().
 	Input("in.mov").
-	Output("out.mp4", "-c:v", "libx264", "-crf", "23").
+	Options("-c:v", "libx264", "-crf", "23").
+	Output("out.mp4").
 	Overwrite(). // -y; without it an existing output returns ErrOutputExists
 	Run(ctx)
 ```
+
+Options apply to the input or output that follows them, in the same order as
+on the ffmpeg command line:
+
+```go
+// ffmpeg -n -ss 30 -i in.mp4 -t 10 -c copy clip.mp4
+err := ff.Command().
+	Options("-ss", "30"). // input option: seek in in.mp4
+	Input("in.mp4").
+	Options("-t", "10", "-c", "copy"). // output options for clip.mp4
+	Output("clip.mp4").
+	Run(ctx)
+```
+
+Common flags are also available as package constants, which can be mixed with
+plain strings. Anything not covered is just a string:
+
+```go
+ff.Command().
+	Input("in.mov").
+	Options(
+		ffmpeg.VideoCodec, "libx264", // "-c:v"
+		ffmpeg.CRF, "23",             // "-crf"
+		ffmpeg.AudioCodec, ffmpeg.Copy, // "-c:a", "copy"
+		"-x264-params", "keyint=60",  // plain string
+		ffmpeg.Metadata, "title=My Movie",
+	).
+	Output("out.mp4")
+```
+
+See [flags.go](flags.go) for the full list (`Codec`, `NoAudio`, `VideoFilter`,
+`Map`, `Seek`, `Duration`, `VideoBitrate`, `PixelFormat`, `MovFlags`, ...).
+
+Pass each flag and value as a separate argument (`"-c:v", "libx264"`). Nothing
+is split or run through a shell, so values with spaces need no quoting.
 
 Raw arguments are also supported:
 
