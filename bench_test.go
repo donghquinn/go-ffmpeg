@@ -90,8 +90,10 @@ func BenchmarkCommandArgs(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = ff.Command().
-			Input("in.mp4", "-ss", "5").
-			Output("out.mp4", "-c:v", "libx264", "-crf", "23").
+			Options("-ss", "5").
+			Input("in.mp4").
+			Options("-c:v", "libx264", "-crf", "23").
+			Output("out.mp4").
 			Overwrite().
 			Args()
 	}

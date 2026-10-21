@@ -21,7 +21,8 @@ func Example() {
 
 	err = ff.Command().
 		Input("in.mov").
-		Output("out.mp4", "-c:v", "libx264", "-crf", "23", "-c:a", "aac").
+		Options("-c:v", "libx264", "-crf", "23", "-c:a", "aac").
+		Output("out.mp4").
 		Overwrite().
 		Run(ctx)
 
@@ -38,6 +39,32 @@ func Example() {
 	case errors.As(err, &fe):
 		fmt.Printf("ffmpeg failed with exit code %d: %s\n", fe.ExitCode, fe.Message)
 	default:
+		log.Fatal(err)
+	}
+}
+
+// Flags can be package constants or plain strings, mixed freely.
+func ExampleCommand_Options() {
+	ff, err := ffmpeg.New()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// ffmpeg -y -ss 30 -i in.mp4 -t 10 -c:v libx264 -crf 23 -c:a copy -movflags +faststart clip.mp4
+	err = ff.Command().
+		Options(ffmpeg.Seek, "30").
+		Input("in.mp4").
+		Options(
+			ffmpeg.Duration, "10",
+			ffmpeg.VideoCodec, "libx264",
+			"-crf", "23", // a plain string works too
+			ffmpeg.AudioCodec, ffmpeg.Copy,
+			ffmpeg.MovFlags, "+faststart",
+		).
+		Output("clip.mp4").
+		Overwrite().
+		Run(context.Background())
+	if err != nil {
 		log.Fatal(err)
 	}
 }

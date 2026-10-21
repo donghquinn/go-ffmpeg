@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,8 +29,10 @@ func testVideo(t *testing.T, ff *FFmpeg) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "in.mp4")
 	err := ff.Command().
-		Input("testsrc=duration=1:size=64x64:rate=10", "-f", "lavfi").
-		Output(out, "-pix_fmt", "yuv420p").
+		Options("-f", "lavfi").
+		Input("testsrc=duration=1:size=64x64:rate=10").
+		Options("-pix_fmt", "yuv420p").
+		Output(out).
 		Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -46,11 +49,12 @@ func TestNewBinaryNotFound(t *testing.T) {
 
 func TestCommandArgs(t *testing.T) {
 	c := (&FFmpeg{}).Command().
-		Global("-threads", "2").
-		Input("in.mp4", "-ss", "5").
-		Output("out.mp4", "-c:v", "libx264").
+		Options("-threads", "2", "-ss", "5").
+		Input("in.mp4").
+		Options("-c:v", "libx264", "-metadata", "title=My Movie").
+		Output("out.mp4").
 		Overwrite()
-	want := []string{"-y", "-threads", "2", "-ss", "5", "-i", "in.mp4", "-c:v", "libx264", "out.mp4"}
+	want := []string{"-y", "-threads", "2", "-ss", "5", "-i", "in.mp4", "-c:v", "libx264", "-metadata", "title=My Movie", "out.mp4"}
 	got := c.Args()
 	if len(got) != len(want) {
 		t.Fatalf("Args() = %q, want %q", got, want)
@@ -59,6 +63,22 @@ func TestCommandArgs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("Args() = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestFlagsMixWithStrings(t *testing.T) {
+	withConsts := (&FFmpeg{}).Command().
+		Input("in.mp4").
+		Options(VideoCodec, "libx264", AudioCodec, Copy, "-x264-params", "keyint=60", NoSubtitle).
+		Output("out.mp4").
+		Args()
+	withStrings := (&FFmpeg{}).Command().
+		Input("in.mp4").
+		Options("-c:v", "libx264", "-c:a", "copy", "-x264-params", "keyint=60", "-sn").
+		Output("out.mp4").
+		Args()
+	if strings.Join(withConsts, " ") != strings.Join(withStrings, " ") {
+		t.Fatalf("constants %q != strings %q", withConsts, withStrings)
 	}
 }
 
@@ -75,11 +95,11 @@ func TestRunErrors(t *testing.T) {
 	}{
 		{"missing input", ff.Command().Input(filepath.Join(dir, "nope.mp4")).Output(filepath.Join(dir, "a.mp4")), ErrFileNotFound},
 		{"output exists", ff.Command().Input(in).Output(in), ErrOutputExists},
-		{"unknown encoder", ff.Command().Input(in).Output(filepath.Join(dir, "b.mp4"), "-c:v", "nopecodec"), ErrEncoderNotFound},
-		{"unknown option", ff.Command().Input(in).Output(filepath.Join(dir, "c.mp4"), "-bogus", "1"), ErrInvalidArgument},
+		{"unknown encoder", ff.Command().Input(in).Options("-c:v", "nopecodec").Output(filepath.Join(dir, "b.mp4")), ErrEncoderNotFound},
+		{"unknown option", ff.Command().Input(in).Options("-bogus", "1").Output(filepath.Join(dir, "c.mp4")), ErrInvalidArgument},
 		{"unknown format", ff.Command().Input(in).Output(filepath.Join(dir, "d.nopeext")), ErrUnknownFormat},
-		{"no such stream", ff.Command().Input(in).Output(filepath.Join(dir, "e.mp4"), "-map", "0:a"), ErrStreamNotFound},
-		{"unknown filter", ff.Command().Input(in).Output(filepath.Join(dir, "f.mp4"), "-vf", "nopefilter"), ErrFilterNotFound},
+		{"no such stream", ff.Command().Input(in).Options("-map", "0:a").Output(filepath.Join(dir, "e.mp4")), ErrStreamNotFound},
+		{"unknown filter", ff.Command().Input(in).Options("-vf", "nopefilter").Output(filepath.Join(dir, "f.mp4")), ErrFilterNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,7 +137,8 @@ func TestRunContextCanceled(t *testing.T) {
 
 	// An endless source never finishes on its own.
 	err := ff.Command().
-		Input("testsrc=size=64x64", "-re", "-f", "lavfi").
+		Options("-re", "-f", "lavfi").
+		Input("testsrc=size=64x64").
 		Output(filepath.Join(t.TempDir(), "out.mp4")).
 		Run(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {

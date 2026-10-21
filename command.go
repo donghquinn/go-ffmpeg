@@ -2,39 +2,49 @@ package ffmpeg
 
 import "context"
 
-// Command builds an ffmpeg invocation of the form
+// Command builds an ffmpeg invocation. Arguments are emitted in the order the
+// methods are called, exactly like on the ffmpeg command line, where an
+// option applies to the next input or output that follows it:
 //
-//	ffmpeg [global options] {[input options] -i input}... {[output options] output}...
+//	ff.Command().
+//		Options("-ss", "5").                    // input option for in.mp4
+//		Input("in.mp4").
+//		Options("-c:v", "libx264", "-crf", "23"). // output options for out.mp4
+//		Output("out.mp4").
+//		Run(ctx)
 //
 // Create one with [FFmpeg.Command]. Methods return the receiver so calls can
 // be chained. A Command is not safe for concurrent modification.
 type Command struct {
 	ff        *FFmpeg
-	global    []string
-	inputs    [][]string
-	outputs   [][]string
+	args      []string
 	overwrite bool
 }
 
-// Global adds global options, placed before all inputs (e.g. "-threads", "4").
-func (c *Command) Global(args ...string) *Command {
-	c.global = append(c.global, args...)
+// Input adds an input file or URL ("-i path"). Options added before it are
+// input options for this input.
+func (c *Command) Input(path string) *Command {
+	c.args = append(c.args, "-i", path)
 	return c
 }
 
-// Input adds an input file. opts are input options applied to this input and
-// placed before its "-i" (e.g. "-ss", "10", "-f", "lavfi").
-func (c *Command) Input(path string, opts ...string) *Command {
-	in := append(append([]string{}, opts...), "-i", path)
-	c.inputs = append(c.inputs, in)
+// Options adds options at the current position. Placed before [Command.Input]
+// they apply to that input; placed before [Command.Output] they apply to that
+// output.
+//
+// Pass each flag and value as a separate argument ("-c:v", "libx264"), as with
+// [os/exec]. Arguments are passed to ffmpeg as-is, never split or interpreted
+// by a shell, so values containing spaces (paths, filter graphs, metadata)
+// need no quoting.
+func (c *Command) Options(args ...string) *Command {
+	c.args = append(c.args, args...)
 	return c
 }
 
-// Output adds an output file. opts are output options applied to this output
-// and placed before its path (e.g. "-c:v", "libx264", "-crf", "23").
-func (c *Command) Output(path string, opts ...string) *Command {
-	out := append(append([]string{}, opts...), path)
-	c.outputs = append(c.outputs, out)
+// Output adds an output file or URL. Options added since the previous input
+// or output are output options for this output.
+func (c *Command) Output(path string) *Command {
+	c.args = append(c.args, path)
 	return c
 }
 
@@ -48,20 +58,11 @@ func (c *Command) Overwrite() *Command {
 // Args returns the arguments the command will pass to ffmpeg, excluding the
 // ones [FFmpeg.Run] adds itself. Useful for logging and tests.
 func (c *Command) Args() []string {
-	var args []string
+	flag := "-n"
 	if c.overwrite {
-		args = append(args, "-y")
-	} else {
-		args = append(args, "-n")
+		flag = "-y"
 	}
-	args = append(args, c.global...)
-	for _, in := range c.inputs {
-		args = append(args, in...)
-	}
-	for _, out := range c.outputs {
-		args = append(args, out...)
-	}
-	return args
+	return append([]string{flag}, c.args...)
 }
 
 // Run runs the command. It returns nil on success and an [*Error] otherwise.
