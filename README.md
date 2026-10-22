@@ -63,6 +63,78 @@ See [flags.go](flags.go) for the full list (`Codec`, `NoAudio`, `VideoFilter`,
 Pass each flag and value as a separate argument (`"-c:v", "libx264"`). Nothing
 is split or run through a shell, so values with spaces need no quoting.
 
+## Option builder
+
+`OptionSet` builds options per case — per rendition, codec or device — from
+reusable presets, with typed values (`CRF(23)`, `Size(1280, 720)`,
+`Seek(90*time.Second)`):
+
+```go
+base := ffmpeg.NewOptionSet().
+	VideoCodec("libx264").Preset("veryfast").PixelFormat("yuv420p").
+	AudioCodec("aac").MovFlags("+faststart")
+
+hd := base.Clone().VideoFilter("scale=-2:1080").CRF(20)
+sd := base.Clone().VideoFilter("scale=-2:480").CRF(26).
+	When(mute, (*ffmpeg.OptionSet).NoAudio)
+
+err := ff.Command().
+	With(ffmpeg.NewOptionSet().Seek(90 * time.Second)). // input options
+	Input("in.mov").
+	With(hd).Output("hd.mp4").
+	With(sd).Output("sd.mp4").
+	Run(ctx)
+```
+
+- Single-valued options (`CRF`, `VideoCodec`, `Set(flag, value)`, ...) **replace**
+  an earlier value, so a cloned preset can be overridden; `Map`, `Metadata`
+  (per key) and `Add` **append**.
+- `Clone`, `Merge(sets...)`, `Remove(flag)`, `Has`, `Get`, `When(cond, fn)`.
+- `Set("-x264-params", "keyint=60")` / `Flag("-nostats")` for anything without a method.
+- `With` skips nil sets and copies its input, and option sets can be mixed
+  with `Options(...)` and validated like any other command.
+
+## Validation
+
+Commands can be checked before running ffmpeg:
+
+```go
+cmd := ff.Command().
+	Options(ffmpeg.ReadRealtime).Input("in.mp4").
+	Options("-c:v libx264", ffmpeg.CRF, "high").
+	Output("out.mp4")
+
+err := cmd.Validate()
+// ffmpeg: invalid command:
+//   "-c:v libx264" (for "out.mp4"): contains a space; pass the option and its value as separate arguments, e.g. Options("-c:v", "libx264");
+//   "-crf" (for "out.mp4"): invalid value "high": must be a number
+
+var ve *ffmpeg.ValidationError
+if errors.As(err, &ve) {
+	for _, issue := range ve.Issues {
+		fmt.Println(issue.Arg, issue.Target, issue.Message)
+	}
+}
+```
+
+| | `cmd.Validate()` | `ff.Validate(ctx, cmd)` |
+|---|---|---|
+| Runs ffmpeg | no | once, then cached (~80 ms) |
+| Cost per call | ~0.35 µs | ~0.37 µs |
+| Inputs/outputs present, empty or flag-like paths, output == input | ✓ | ✓ |
+| `"-flag value"` in one string, value without a flag, empty args | ✓ | ✓ |
+| Missing / unexpected values for known flags | ✓ | ✓ |
+| Value format (`-ss`, `-t`, `-crf`, `-s`, `-b:v`, `-metadata`, ...) | ✓ | ✓ |
+| Input-only flag before an output and vice versa | known flags | all flags |
+| Options after the last output (ignored by ffmpeg) | ✓ | ✓ |
+| Unknown options, incl. codec private options (`-x264-params`) | – | ✓ |
+| `-c` encoder/decoder and `-f` format names exist | – | ✓ |
+
+Both return a `*ValidationError` matching `ffmpeg.ErrInvalidCommand`. `Run`
+does not validate automatically, so validation never adds cost to a run you
+don't ask for. Flags unknown to the built-in table are accepted by
+`cmd.Validate()`, and `ff.Validate` checks them against the installed ffmpeg.
+
 Raw arguments are also supported:
 
 ```go

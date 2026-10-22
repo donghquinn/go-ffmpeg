@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The wrapper's work on top of ffmpeg itself is building arguments,
@@ -127,5 +128,63 @@ func BenchmarkTailBuffer(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		t.Write(chunk)
+	}
+}
+
+func benchCommand(ff *FFmpeg) *Command {
+	return ff.Command().
+		Options(Seek, "30").
+		Input("in.mp4").
+		Options(VideoCodec, "libx264", CRF, "23", AudioCodec, Copy, Metadata, "title=My Movie", MovFlags, "+faststart").
+		Output("out.mp4")
+}
+
+func BenchmarkValidate(b *testing.B) {
+	b.Run("static", func(b *testing.B) {
+		c := benchCommand(&FFmpeg{})
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if err := c.Validate(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("ffmpeg-cached", func(b *testing.B) {
+		ff := benchFFmpeg(b)
+		c := benchCommand(ff)
+		ctx := context.Background()
+		if err := ff.Validate(ctx, c); err != nil { // load capabilities once
+			b.Fatal(err)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := ff.Validate(ctx, c); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("ffmpeg-first-call", func(b *testing.B) {
+		ff := benchFFmpeg(b)
+		c := benchCommand(ff)
+		ctx := context.Background()
+		for i := 0; i < b.N; i++ {
+			ff.caps = nil
+			if err := ff.Validate(ctx, c); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkOptionSet(b *testing.B) {
+	base := NewOptionSet().VideoCodec("libx264").Preset("veryfast").PixelFormat("yuv420p").AudioCodec("aac").MovFlags("+faststart")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = (&FFmpeg{}).Command().
+			Input("in.mp4").
+			With(base.Clone().Size(1920, 1080).CRF(20).Seek(90 * time.Second)).
+			Output("out.mp4").
+			Args()
 	}
 }

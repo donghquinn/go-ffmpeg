@@ -1,6 +1,9 @@
 package ffmpeg
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Command builds an ffmpeg invocation. Arguments are emitted in the order the
 // methods are called, exactly like on the ffmpeg command line, where an
@@ -17,15 +20,36 @@ import "context"
 // be chained. A Command is not safe for concurrent modification.
 type Command struct {
 	ff        *FFmpeg
-	args      []string
+	parts     []part
+	n         int // total number of arguments in parts
 	overwrite bool
+}
+
+type partKind uint8
+
+const (
+	partOptions partKind = iota
+	partInput
+	partOutput
+)
+
+// part is one builder call: a group of options, or an input or output path.
+type part struct {
+	kind partKind
+	args []string // options, or the single path
+}
+
+func (c *Command) add(kind partKind, args []string) *Command {
+	c.parts = append(c.parts, part{kind: kind, args: args})
+	c.n += len(args)
+	return c
 }
 
 // Input adds an input file or URL ("-i path"). Options added before it are
 // input options for this input.
 func (c *Command) Input(path string) *Command {
-	c.args = append(c.args, "-i", path)
-	return c
+	c.n++ // "-i"
+	return c.add(partInput, []string{path})
 }
 
 // Options adds options at the current position. Placed before [Command.Input]
@@ -35,17 +59,30 @@ func (c *Command) Input(path string) *Command {
 // Pass each flag and value as a separate argument ("-c:v", "libx264"), as with
 // [os/exec]. Arguments are passed to ffmpeg as-is, never split or interpreted
 // by a shell, so values containing spaces (paths, filter graphs, metadata)
-// need no quoting.
+// need no quoting. Use [Command.Validate] to check them before running.
 func (c *Command) Options(args ...string) *Command {
-	c.args = append(c.args, args...)
+	if len(args) == 0 {
+		return c
+	}
+	return c.add(partOptions, append([]string(nil), args...))
+}
+
+// With adds the options of each set at the current position, like
+// [Command.Options]. Nil sets are skipped, so optional sets can be passed
+// directly. The sets are copied; changing them later does not affect c.
+func (c *Command) With(sets ...*OptionSet) *Command {
+	for _, s := range sets {
+		if s != nil && s.Len() > 0 {
+			c.add(partOptions, s.Args())
+		}
+	}
 	return c
 }
 
 // Output adds an output file or URL. Options added since the previous input
 // or output are output options for this output.
 func (c *Command) Output(path string) *Command {
-	c.args = append(c.args, path)
-	return c
+	return c.add(partOutput, []string{path})
 }
 
 // Overwrite makes ffmpeg overwrite existing output files ("-y"). Without it,
@@ -58,16 +95,63 @@ func (c *Command) Overwrite() *Command {
 // Args returns the arguments the command will pass to ffmpeg, excluding the
 // ones [FFmpeg.Run] adds itself. Useful for logging and tests.
 func (c *Command) Args() []string {
-	flag := "-n"
+	args := make([]string, 0, c.n+1)
 	if c.overwrite {
-		flag = "-y"
+		args = append(args, "-y")
+	} else {
+		args = append(args, "-n")
 	}
-	return append([]string{flag}, c.args...)
+	for _, p := range c.parts {
+		if p.kind == partInput {
+			args = append(args, "-i")
+		}
+		args = append(args, p.args...)
+	}
+	return args
 }
 
 // Run runs the command. It returns nil on success and an [*Error] otherwise.
 // When ctx is done, ffmpeg is asked to stop and the returned error matches
 // ctx.Err() with [errors.Is].
+//
+// Run does not validate the command; call [Command.Validate] or
+// [FFmpeg.Validate] first to catch mistakes without starting ffmpeg.
 func (c *Command) Run(ctx context.Context) error {
 	return c.ff.Run(ctx, c.Args()...)
+}
+
+// String returns the full command line Run executes, including the ffmpeg
+// executable and the arguments [FFmpeg.Run] adds, quoted for a POSIX shell so
+// it can be copied into a terminal. Useful for logging and debugging.
+func (c *Command) String() string {
+	bin := c.ff.ffmpegPath
+	if bin == "" {
+		bin = "ffmpeg"
+	}
+	var b strings.Builder
+	b.WriteString(shellQuote(bin))
+	for _, a := range c.ff.runArgs(c.Args()) {
+		b.WriteByte(' ')
+		b.WriteString(shellQuote(a))
+	}
+	return b.String()
+}
+
+// shellQuote returns s quoted for a POSIX shell, or unchanged if it needs no
+// quoting.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	for i := 0; i < len(s); i++ {
+		if !isShellSafe(s[i]) {
+			return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+		}
+	}
+	return s
+}
+
+func isShellSafe(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' ||
+		strings.IndexByte("-_./:=+,@%", c) >= 0
 }

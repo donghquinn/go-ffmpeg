@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/donghquinn/go-ffmpeg"
@@ -67,6 +68,61 @@ func ExampleCommand_Options() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Build options per case from a shared preset.
+func ExampleOptionSet() {
+	base := ffmpeg.NewOptionSet().
+		VideoCodec("libx264").Preset("veryfast").PixelFormat("yuv420p").
+		AudioCodec("aac").MovFlags("+faststart")
+
+	type rendition struct {
+		height  int
+		crf     float64
+		noAudio bool
+	}
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		With(ffmpeg.NewOptionSet().Seek(90 * time.Second)).
+		Input("in.mov")
+	for _, r := range []rendition{{1080, 20, false}, {480, 26, true}} {
+		opts := base.Clone().
+			VideoFilter(fmt.Sprintf("scale=-2:%d", r.height)).
+			CRF(r.crf).
+			When(r.noAudio, (*ffmpeg.OptionSet).NoAudio)
+		cmd.With(opts).Output(fmt.Sprintf("out_%dp.mp4", r.height))
+	}
+	fmt.Println(strings.Join(cmd.Args(), " "))
+	// Output:
+	// -n -ss 90 -i in.mov -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:1080 -crf 20 out_1080p.mp4 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:480 -crf 26 -an out_480p.mp4
+}
+
+func ExampleCommand_String() {
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		Input("my video.mov").
+		Options("-vf", "scale=-2:720").
+		Output("out.mp4").
+		Overwrite()
+	fmt.Println(cmd)
+	// Output:
+	// ffmpeg -hide_banner -nostdin -y -i 'my video.mov' -vf scale=-2:720 out.mp4
+}
+
+func ExampleCommand_Validate() {
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		Input("in.mp4").
+		Options("-c:v libx264", ffmpeg.CRF, "high", ffmpeg.ReadRealtime).
+		Output("out.mp4")
+
+	var ve *ffmpeg.ValidationError
+	if errors.As(cmd.Validate(), &ve) {
+		for _, issue := range ve.Issues {
+			fmt.Println(issue)
+		}
+	}
+	// Output:
+	// "-c:v libx264" (for "out.mp4"): contains a space; pass the option and its value as separate arguments, e.g. Options("-c:v", "libx264")
+	// "-crf" (for "out.mp4"): invalid value "high": must be a number
+	// "-re" (for "out.mp4"): input-only option placed before an output; move it before the Input() it applies to
 }
 
 func ExampleFFmpeg_Probe() {
