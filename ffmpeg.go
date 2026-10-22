@@ -106,10 +106,14 @@ func (f *FFmpeg) Command() *Command {
 //
 // Run returns nil on success, and an [*Error] otherwise.
 func (f *FFmpeg) Run(ctx context.Context, args ...string) error {
-	full := append([]string{"-hide_banner", "-nostdin"}, f.logLevelArgs()...)
-	full = append(full, args...)
-	_, err := f.run(ctx, f.ffmpegPath, "ffmpeg", full, nil)
+	_, err := f.run(ctx, f.ffmpegPath, "ffmpeg", f.runArgs(args), nil)
 	return err
+}
+
+// runArgs returns args with the arguments Run prepends.
+func (f *FFmpeg) runArgs(args []string) []string {
+	full := append([]string{"-hide_banner", "-nostdin"}, f.logLevelArgs()...)
+	return append(full, args...)
 }
 
 func (f *FFmpeg) logLevelArgs() []string {

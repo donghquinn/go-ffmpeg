@@ -1,6 +1,9 @@
 package ffmpeg
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Command builds an ffmpeg invocation. Arguments are emitted in the order the
 // methods are called, exactly like on the ffmpeg command line, where an
@@ -115,4 +118,40 @@ func (c *Command) Args() []string {
 // [FFmpeg.Validate] first to catch mistakes without starting ffmpeg.
 func (c *Command) Run(ctx context.Context) error {
 	return c.ff.Run(ctx, c.Args()...)
+}
+
+// String returns the full command line Run executes, including the ffmpeg
+// executable and the arguments [FFmpeg.Run] adds, quoted for a POSIX shell so
+// it can be copied into a terminal. Useful for logging and debugging.
+func (c *Command) String() string {
+	bin := c.ff.ffmpegPath
+	if bin == "" {
+		bin = "ffmpeg"
+	}
+	var b strings.Builder
+	b.WriteString(shellQuote(bin))
+	for _, a := range c.ff.runArgs(c.Args()) {
+		b.WriteByte(' ')
+		b.WriteString(shellQuote(a))
+	}
+	return b.String()
+}
+
+// shellQuote returns s quoted for a POSIX shell, or unchanged if it needs no
+// quoting.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	for i := 0; i < len(s); i++ {
+		if !isShellSafe(s[i]) {
+			return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+		}
+	}
+	return s
+}
+
+func isShellSafe(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' ||
+		strings.IndexByte("-_./:=+,@%", c) >= 0
 }

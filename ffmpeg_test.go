@@ -174,3 +174,18 @@ func TestProbe(t *testing.T) {
 		t.Fatalf("err = %v, want ffprobe ErrFileNotFound", err)
 	}
 }
+
+func TestCommandString(t *testing.T) {
+	f := &FFmpeg{ffmpegPath: "/usr/bin/ffmpeg", logLevel: "error"}
+	c := f.Command().
+		Input("my clip.mp4").
+		Options("-vf", "scale=-2:720", "-metadata", "title=It's here").
+		Output("out.mp4")
+	want := `/usr/bin/ffmpeg -hide_banner -nostdin -loglevel error -n -i 'my clip.mp4' -vf scale=-2:720 -metadata 'title=It'\''s here' out.mp4`
+	if got := c.String(); got != want {
+		t.Fatalf("String() =\n%s\nwant\n%s", got, want)
+	}
+	if got := (&FFmpeg{}).Command().Output("").String(); got != "ffmpeg -hide_banner -nostdin -n ''" {
+		t.Fatalf("String() = %s", got)
+	}
+}

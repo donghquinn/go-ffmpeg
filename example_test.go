@@ -96,6 +96,17 @@ func ExampleOptionSet() {
 	// -n -ss 90 -i in.mov -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:1080 -crf 20 out_1080p.mp4 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart -vf scale=-2:480 -crf 26 -an out_480p.mp4
 }
 
+func ExampleCommand_String() {
+	cmd := (&ffmpeg.FFmpeg{}).Command().
+		Input("my video.mov").
+		Options("-vf", "scale=-2:720").
+		Output("out.mp4").
+		Overwrite()
+	fmt.Println(cmd)
+	// Output:
+	// ffmpeg -hide_banner -nostdin -y -i 'my video.mov' -vf scale=-2:720 out.mp4
+}
+
 func ExampleCommand_Validate() {
 	cmd := (&ffmpeg.FFmpeg{}).Command().
 		Input("in.mp4").
